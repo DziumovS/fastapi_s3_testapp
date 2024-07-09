@@ -1,0 +1,99 @@
+services:
+  postgres:
+    container_name: postgres_db
+    build:
+      context: .
+      dockerfile: docker/database/Dockerfile
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    volumes:
+      - pg_data_mms:/var/lib/postgresql/data
+    env_file:
+      - "public.env"
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 4G
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB"]
+    networks:
+      - mynetwork
+
+  minio:
+    container_name: minio
+    build:
+      context: .
+      dockerfile: docker/s3_storage/Dockerfile
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    restart: always
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - private.env
+    volumes:
+      - ./minio/data:/data
+    networks:
+      - mynetwork
+
+  private_api:
+    container_name: private_api
+    build:
+      context: .
+      dockerfile: docker/private_service/Dockerfile
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    ports:
+      - "8001:8001"
+    env_file:
+      - private.env
+    depends_on:
+      - postgres
+      - minio
+    restart: unless-stopped
+    networks:
+      - mynetwork
+
+  public_api:
+    container_name: public_api
+    build:
+      context: .
+      dockerfile: docker/public_service/Dockerfile
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    ports:
+      - "8002:8002"
+    env_file:
+      - public.env
+    depends_on:
+      - postgres
+      - private_api
+      - minio
+    restart: unless-stopped
+    networks:
+      - mynetwork
+
+volumes:
+  pg_data_mms:
+    name: pg_data_mms
+
+networks:
+  mynetwork:
+    driver: bridge
